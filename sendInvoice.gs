@@ -4,8 +4,8 @@ function sendInvoice() {
   Logger.log('Starting the Script to check Email email for invoices and sending them');
   //Iterate through all emails 
   
-  var client_id='AbvrSkKmXtvhRe9WFxumBOQsL-tkhZPXtLzYTEoZ-tu7UmkKwwlJd3QyIjpJEv6iolklSYNiVCEbP8gz';
-  var secret_id='ENQKkopSBOPJx0UmKmc89fRN_2UDupiAhVnh36SD0bOZ8U-hOLXtiQH9QDKSO4bIZkcG7k2EDoi8DTud';
+  var client_id='';
+  var secret_id='';
   
   var threads = GmailApp.getInboxThreads();
   var invoiceThreads=[];
