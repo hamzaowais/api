@@ -1,8 +1,41 @@
+
+
 function sendInvoice() {
   Logger.log('Starting the Script to check Email email for invoices and sending them');
   //Iterate through all emails 
+  
+  var client_id='AbvrSkKmXtvhRe9WFxumBOQsL-tkhZPXtLzYTEoZ-tu7UmkKwwlJd3QyIjpJEv6iolklSYNiVCEbP8gz';
+  var secret_id='ENQKkopSBOPJx0UmKmc89fRN_2UDupiAhVnh36SD0bOZ8U-hOLXtiQH9QDKSO4bIZkcG7k2EDoi8DTud';
+  
   var threads = GmailApp.getInboxThreads();
+  var invoiceThreads=[];
   var flagInvoiceEmail=0;
+  
+  for (var j = 0; j < threads.length; j++) {
+    if(threads[j].isUnread()){
+      var subject = threads[j].getFirstMessageSubject();
+      subject = subject.trim();
+      subject=subject.toLowerCase()
+      if(subject=='send paypal invoice now!'){
+        
+        invoiceThreads.push(threads[j]);
+        var emailmessages= threads[j].getMessages();
+        var emailmessage=emailmessages[0].getPlainBody();
+        var data=getInvoiceDetailsFromMail(emailmessage);
+      } 
+    }
+ }
+  
+  if(invoiceThreads.length>0){
+    // get authorizationToken
+    var authorizationObj = getAuthorizationToken(client_id,secret_id);
+    if(authorizationObj.error==true){
+      
+    }
+    Logger.log(JSON.stringify(authorizationObj));
+  }
+  
+ 
    if(flagInvoiceEmail==1){
    var tokenEndpoint = "https://api.sandbox.paypal.com/v1/oauth2/token";
     var head = {
@@ -26,31 +59,6 @@ function sendInvoice() {
     var resultObject = JSON.parse(result);
     var authorizationToken=resultObject.access_token;
   
- 
-    var merchant_info= {
-  "email": "hamza.agreed@gmail.com",
-  "first_name": "David",
-  "last_name": "Larusso",
-  "business_name": "Mitchell & Murray",
-  "phone": {
-    "country_code": "001",
-    "national_number": "4085551234"
-  }
-    }
-      
-    var items= [
-  {
-    name: "Zoom System wireless headphones",
-    quantity: 2,
-    unit_price: {
-    currency: "USD",
-    value: 120
-    },
-    tax: {
-    name: "Tax",
-    percent: 0
-    }
-  }];
     
       head = {
       'Authorization':"Bearer "+ authorizationToken,
@@ -107,19 +115,89 @@ if (responseCode === 200) {
 }
   
   }    
-  for (var j = 0; j < threads.length; j++) {
-    if(threads[j].isUnread()){
-      var subject = threads[j].getFirstMessageSubject();
-      subject = subject.trim();
-      subject=subject.toLowerCase()
-      if(subject=='send paypal invoice now!'){
-        var emailmessages= threads[j].getMessages();
-        var emailmessage=emailmessages[0].getPlainBody();
-        emailmessage = emailmessage.split("\n");
+  
 
+  
+}
+
+function createInvoiceDraft(invoiceData, authorizationToken){
+  head = {
+    'Authorization':"Bearer "+ authorizationToken,
+    'Content-Type': 'application/json'
+  }
+  params = {
+    headers:  head,
+    method : "post",
+    muteHttpExceptions: true,
+    payload:JSON.stringify(invoiceData)    
+  }
+  tokenEndpoint='https://api.sandbox.paypal.com/v1/invoicing/invoices';
+  request = UrlFetchApp.getRequest(tokenEndpoint, params); 
+  response = UrlFetchApp.fetch(tokenEndpoint, params); 
+  var responseCode = response.getResponseCode();
+  var responseBody = response.getContentText();
+  if (responseCode === 201) {
+    var responseJson = JSON.parse(responseBody);
+    invoiceResponse.error=false;
+    invoiceResponse.id=responseJson.id;
+    } else {
+      invoiceResponse.error=true;
+      invoiceResponse.message=Utilities.formatString("Request failed. Expected 200, got %d: %s", responseCode, responseBody);
+    }
+  
+  return invoiceResponse;
+}
+
+function getAuthorizationToken(client_id,secret_id){
+  var tokenEndpoint = "https://api.sandbox.paypal.com/v1/oauth2/token";
+    var head = {
+      'Authorization':"Basic "+ Utilities.base64Encode(client_id+':'+secret_id),
+      'Accept': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    var postPayload = {
+        "grant_type" : "client_credentials"
+    }
+    var params = {
+        headers:  head,
+        contentType: 'application/x-www-form-urlencoded',
+        method : "post",
+        muteHttpExceptions: true,
+        payload : postPayload      
+    }
+    var request = UrlFetchApp.getRequest(tokenEndpoint, params); 
+    var response = UrlFetchApp.fetch(tokenEndpoint, params); 
+    var responseCode = response.getResponseCode()
+    var responseBody = response.getContentText()
+
+    if (responseCode === 200) {
+      var tokenResponse={};
+      var responseJson = JSON.parse(responseBody);
+      if(responseJson&&responseJson.error){
+        tokenResponse.error=true;
+        tokenResponse.message=responseJson.error;
+        return tokenResponse;
+      }
+      if(responseJson.access_token){
+        tokenResponse.error=false;
+        tokenResponse.access_token=responseJson.access_token;
+        return tokenResponse;
+      }
+     tokenResponse.error=true;
+     tokenResponse.message='Access Token not found';
+     return tokenResponse;
+    } else {
+        var tokenResponse={};
+        tokenResponse.error=true;
+        tokenResponse.message=Utilities.formatString("Request failed. Expected 200, got %d: %s", responseCode, responseBody);
+        return tokenResponse;
+      }
+}
+
+function getInvoiceDetailsFromMail(emailmessage){
+        emailmessage = emailmessage.split("\n");
         var i =0;
         var data={};
-        
         while(i<emailmessage.length){
           
           var currentEmailLine=emailmessage[i];
@@ -191,8 +269,5 @@ if (responseCode === 200) {
           i=i+1;
         }
         flagInvoiceEmail=1;
-        Logger.log(JSON.stringify(data)); 
-      } 
-    }
- }
-}
+       return data;
+}}
