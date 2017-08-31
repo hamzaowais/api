@@ -4,93 +4,121 @@ function sendInvoice() {
   Logger.log('Starting the Script to check Email email for invoices and sending them');
   //Iterate through all emails 
   
-  var client_id='AbvrSkKmXtvhRe9WFxumBOQsL-tkhZPXtLzYTEoZ-tu7UmkKwwlJd3QyIjpJEv6iolklSYNiVCEbP8gz';
-  var secret_id='ENQKkopSBOPJx0UmKmc89fRN_2UDupiAhVnh36SD0bOZ8U-hOLXtiQH9QDKSO4bIZkcG7k2EDoi8DTud';
+  var client_id='';
+  var secret_id='';
   
   var threads = GmailApp.getInboxThreads();
   var invoiceThreads=[];
   var flagInvoiceEmail=0;
   
   for (var j = 0; j < threads.length; j++) {
-    var tempMes=threads[j].getMessages()
-    if(threads[j].isUnread() && tempMes.length==1){
+    if(threads[j].isUnread()){
       var subject = threads[j].getFirstMessageSubject();
       subject = subject.trim();
       subject=subject.toLowerCase()
-      if(subject=='send paypal invoice'){
+      if(subject=='send paypal invoice now!'){
+        
         invoiceThreads.push(threads[j]);
+        var emailmessages= threads[j].getMessages();
+        var emailmessage=emailmessages[0].getPlainBody();
+        var data=getInvoiceDetailsFromMail(emailmessage);
       } 
     }
  }
+  
   if(invoiceThreads.length>0){
     // get authorizationToken
     var authorizationObj = getAuthorizationToken(client_id,secret_id);
     if(authorizationObj.error==true){
-      //Send Error to admin 
-      Logger.log(authorizationObj.message);
-      MailApp.sendEmail("hamza.agreed@gmail.com","Contact Admin- Automated invoicing Api not working",authorizationObj.message);
-      return;
+      
     }
-    var authorizationToken=authorizationObj.access_token;
-    invoiceThreads.forEach(function(invoiceThread){
-      var emailmessages= invoiceThread.getMessages();
-      var emailmessage=emailmessages[0].getPlainBody();
-      var invoiceData=getInvoiceDetailsFromMail(emailmessage);
-      Logger.log(JSON.stringify(invoiceData));
-      //check and validate invoiceData:= check valid email and the invoice amount
-      var draftInvoiceObject=createInvoiceDraft(invoiceData,authorizationToken);
-      if(draftInvoiceObject.error){
-        Logger.log(authorizationObj.message);
-        MailApp.sendEmail("hamza.agreed@gmail.com","Contact Admin- Automated invoicing Api not working",authorizationObj.message);
-        invoiceThread.reply('Failure<br>'+ authorizationObj.message);
-        Logger.log(authorizationObj.message);
-        return;
-      }
-      var invoiceConfirmation = sendDraftInvoice(authorizationObj.id,authorizationToken);
-      if(invoiceConfirmation.error){
-        Logger.log(invoiceConfirmation.message);
-        MailApp.sendEmail("hamza.agreed@gmail.com","Contact Admin- Automated invoicing Api not working",invoiceConfirmation.message);
-        invoiceThread.reply('Failure<br>'+ invoiceConfirmation.message);
-        Logger.log(invoiceConfirmation.message);
-        return;
-      }
-      invoiceThread.reply('Invoice Sent<br>');      
-    });
-  }
-}
-
-function sendDraftInvoice(invoiceId,authorizationToken){
-  head = {
-    'Authorization':"Bearer "+ authorizationToken,
-    'Content-Type': 'application/json'
+    Logger.log(JSON.stringify(authorizationObj));
   }
   
-   params = {
-    headers:  head,
-    method : "post",
-    muteHttpExceptions: true, 
-  }
-  tokenEndpoint='https://api.sandbox.paypal.com/v1/invoicing/invoices/'+invoiceId+'/send';
-  request = UrlFetchApp.getRequest(tokenEndpoint, params); 
-  response = UrlFetchApp.fetch(tokenEndpoint, params); 
+ 
+   if(flagInvoiceEmail==1){
+   var tokenEndpoint = "https://api.sandbox.paypal.com/v1/oauth2/token";
+    var head = {
+      'Authorization':"Basic "+ Utilities.base64Encode("AbvrSkKmXtvhRe9WFxumBOQsL-tkhZPXtLzYTEoZ-tu7UmkKwwlJd3QyIjpJEv6iolklSYNiVCEbP8gz:ENQKkopSBOPJx0UmKmc89fRN_2UDupiAhVnh36SD0bOZ8U-hOLXtiQH9QDKSO4bIZkcG7k2EDoi8DTud"),
+      'Accept': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    var postPayload = {
+        "grant_type" : "client_credentials"
+    }
+    var params = {
+        headers:  head,
+        contentType: 'application/x-www-form-urlencoded',
+        method : "post",
+        payload : postPayload
+    }
+    var request = UrlFetchApp.getRequest(tokenEndpoint, params); 
+    var response = UrlFetchApp.fetch(tokenEndpoint, params); 
+    var result = response.getContentText();
+    Logger.log(result);
+    var resultObject = JSON.parse(result);
+    var authorizationToken=resultObject.access_token;
   
-  var responseCode = response.getResponseCode();
-  var responseBody = response.getContentText();
-   var invoiceResponse={};
-  if (responseCode === 202) {
     
-    invoiceResponse.error=false;
-    return invoiceResponse;
-
-    } else {
-      invoiceResponse.error=true;
-      invoiceResponse.message=Utilities.formatString("Request failed. Expected 202, got %d: %s", responseCode, responseBody);
-      return invoiceResponse;
+      head = {
+      'Authorization':"Bearer "+ authorizationToken,
+      'Content-Type': 'application/json'
     }
+      var create_invoice_json = {
+    "merchant_info": {
+        "email": "hamza.agreed-facilitator@gmail.com",
+        "first_name": "Dennis",
+        "last_name": "Doctor",
+        "business_name": "Medical Professionals, LLC",
+        "phone": {
+            "country_code": "001",
+            "national_number": "5032141716"
+        },
+        "address": {
+            "line1": "1234 Main St.",
+            "city": "Portland",
+            "state": "OR",
+            "postal_code": "97217",
+            "country_code": "US"
+        }
+    },
+    
+    "items": [{
+        "name": "Sutures",
+        "quantity": 100.0,
+        "unit_price": {
+            "currency": "USD",
+            "value": 5
+        }
+    }]
+};
   
+      params = {
+        headers:  head,
+        method : "post",
+        muteHttpExceptions: true,
+        payload:JSON.stringify(create_invoice_json)
+        
+    }
+      tokenEndpoint='https://api.sandbox.paypal.com/v1/invoicing/invoices';
+           request = UrlFetchApp.getRequest(tokenEndpoint, params); 
+     response = UrlFetchApp.fetch(tokenEndpoint, params); 
+  var responseCode = response.getResponseCode()
+var responseBody = response.getContentText()
+
+if (responseCode === 200) {
+  var responseJson = JSON.parse(responseBody)
+  // ...
+} else {
+  Logger.log(Utilities.formatString("Request failed. Expected 200, got %d: %s", responseCode, responseBody))
+  // ...
+}
+  
+  }    
+  
+
   
 }
-
 
 function createInvoiceDraft(invoiceData, authorizationToken){
   head = {
@@ -106,11 +134,8 @@ function createInvoiceDraft(invoiceData, authorizationToken){
   tokenEndpoint='https://api.sandbox.paypal.com/v1/invoicing/invoices';
   request = UrlFetchApp.getRequest(tokenEndpoint, params); 
   response = UrlFetchApp.fetch(tokenEndpoint, params); 
-  
   var responseCode = response.getResponseCode();
   var responseBody = response.getContentText();
-    Logger.log(Utilities.formatString("Request failed. Expected 200, got %d: %s", responseCode, responseBody))
-  var invoiceResponse={};
   if (responseCode === 201) {
     var responseJson = JSON.parse(responseBody);
     invoiceResponse.error=false;
@@ -185,8 +210,6 @@ function getInvoiceDetailsFromMail(emailmessage){
                 data.merchant_info={};
               }
               data.merchant_info.email=currentEmailLine[1];
-              data.merchant_info.email=data.merchant_info.email.trim();
-              
             }
             
             if(currentEmailLine[0]=='first_name'){
@@ -247,4 +270,4 @@ function getInvoiceDetailsFromMail(emailmessage){
         }
         flagInvoiceEmail=1;
        return data;
-}
+}}
