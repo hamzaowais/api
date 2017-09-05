@@ -4,12 +4,18 @@ function sendInvoice() {
   Logger.log('Starting the Script to check Email email for invoices and sending them');
   //Iterate through all emails 
   
-  var client_id='AbvrSkKmXtvhRe9WFxumBOQsL-tkhZPXtLzYTEoZ-tu7UmkKwwlJd3QyIjpJEv6iolklSYNiVCEbP8gz';
-  var secret_id='ENQKkopSBOPJx0UmKmc89fRN_2UDupiAhVnh36SD0bOZ8U-hOLXtiQH9QDKSO4bIZkcG7k2EDoi8DTud';
+//  var client_id='';
+//  var secret_id='';
+  
+  var client_id='';
+  var secret_id='';
   
   var threads = GmailApp.getInboxThreads();
   var invoiceThreads=[];
+  var unpaidInvoiceThreads =[];
+  var paidInvoiceThreads=[];
   var flagInvoiceEmail=0;
+ 
   
   for (var j = 0; j < threads.length; j++) {
     var tempMes=threads[j].getMessages()
@@ -19,11 +25,22 @@ function sendInvoice() {
       subject=subject.toLowerCase()
       if(subject=='send paypal invoice'){
         invoiceThreads.push(threads[j]);
+        flagInvoiceEmail=1;
+      } 
+      if(subject=='unpaid invoice'){
+        unpaidInvoiceThreads.push(threads[j]);
+        flagInvoiceEmail=1;
+      } 
+      if(subject=='paid invoice'){
+        paidInvoiceThreads.push(threads[j]);
+        flagInvoiceEmail=1;
       } 
     }
  }
-  if(invoiceThreads.length>0){
-    // get authorizationToken
+  
+  
+  var authorizationToken;
+  if(flagInvoiceEmail==1){
     var authorizationObj = getAuthorizationToken(client_id,secret_id);
     if(authorizationObj.error==true){
       //Send Error to admin 
@@ -31,7 +48,15 @@ function sendInvoice() {
       MailApp.sendEmail("hamza.agreed@gmail.com","Contact Admin- Automated invoicing Api not working",authorizationObj.message);
       return;
     }
-    var authorizationToken=authorizationObj.access_token;
+    authorizationToken=authorizationObj.access_token;
+  }
+  
+  
+  
+  
+  if(invoiceThreads.length>0){
+    // get authorizationToken
+    
     invoiceThreads.forEach(function(invoiceThread){
       var emailmessages= invoiceThread.getMessages();
       var emailmessage=emailmessages[0].getPlainBody();
@@ -40,13 +65,13 @@ function sendInvoice() {
       //check and validate invoiceData:= check valid email and the invoice amount
       var draftInvoiceObject=createInvoiceDraft(invoiceData,authorizationToken);
       if(draftInvoiceObject.error){
-        Logger.log(authorizationObj.message);
+        Logger.log(draftInvoiceObject.message);
         MailApp.sendEmail("hamza.agreed@gmail.com","Contact Admin- Automated invoicing Api not working",authorizationObj.message);
-        invoiceThread.reply('Failure<br>'+ authorizationObj.message);
-        Logger.log(authorizationObj.message);
+        invoiceThread.reply('Failure<br>'+ draftInvoiceObject.message);
+        Logger.log(draftInvoiceObject.message);
         return;
       }
-      var invoiceConfirmation = sendDraftInvoice(authorizationObj.id,authorizationToken);
+      var invoiceConfirmation = sendDraftInvoice(draftInvoiceObject.id,authorizationToken);
       if(invoiceConfirmation.error){
         Logger.log(invoiceConfirmation.message);
         MailApp.sendEmail("hamza.agreed@gmail.com","Contact Admin- Automated invoicing Api not working",invoiceConfirmation.message);
@@ -57,8 +82,170 @@ function sendInvoice() {
       invoiceThread.reply('Invoice Sent<br>');      
     });
   }
+
+  if(unpaidInvoiceThreads.length>0){
+    //get list of all unpaid invoice 
+    unpaidInvoiceObj=getUnpaidInvoice(authorizationToken);
+    if(unpaidInvoiceObj.error){
+      Logger.log(unpaidInvoiceObj.message);
+      MailApp.sendEmail("hamza.agreed@gmail.com"," Contact Admin",unpaidInvoiceObj.message);
+
+      Logger.log(unpaidInvoiceObj.message);
+      return;
+    }
+    
+    var htmlBody = 'Congrats No Unpaid Invoice exist'
+    Logger.log(JSON.stringify(unpaidInvoiceObj));
+    if(unpaidInvoiceObj.invoices.length>0){
+      htmlBody = htmlifyObject(unpaidInvoiceObj.invoices);
+    }
+    unpaidInvoiceThreads.forEach(function(unpaidInvoiceThread){
+      unpaidInvoiceThread.reply("Unpaid Invoices", {
+        htmlBody: htmlBody  
+      });
+    });
+  }
+
+  if(paidInvoiceThreads.length>0){
+    //get list of all paid invoice 
+    paidInvoiceObj=getPaidInvoice(authorizationToken);
+    if(paidInvoiceObj.error){
+      Logger.log(paidInvoiceObj.message);
+      MailApp.sendEmail("hamza.agreed@gmail.com"," Contact Admin",paidInvoiceObj.message);
+
+      Logger.log(paidInvoiceObj.message);
+      return;
+    }
+    
+    var htmlBody = 'Crap!!  No paid Invoice exist'
+    Logger.log(JSON.stringify(paidInvoiceObj));
+    if(paidInvoiceObj.invoices.length>0){
+      htmlBody = htmlifyObject(paidInvoiceObj.invoices);
+    }
+    paidInvoiceThreads.forEach(function(paidInvoiceThread){
+      paidInvoiceThread.reply("paid Invoices", {
+        htmlBody: htmlBody  
+      });
+    });
+  }
+
+
 }
 
+
+function htmlifyObject(invoices){
+  
+  var htmlTable='<table><tr><th>Invoice No</th><th>Merchant Email</th><th>Invoice Date</th><th>Total Amount</th><th>Status</th></tr>';
+  invoices.forEach(function(invoice){
+    // add invoice number
+    htmlTable=htmlTable+'<tr>';
+    if(invoice.id){
+      htmlTable=htmlTable+'<td>'+invoice.number+'</td>';
+    }else{
+      htmlTable=htmlTable+'<td>N/A</td>';
+    }
+    //add merchant email
+    if(invoice.billing_info&&invoice.billing_info.email){
+      htmlTable=htmlTable+'<td>'+invoice.billing_info.email+'</td>';
+    }else{
+      htmlTable=htmlTable+'<td>N/A</td>';
+    }
+    //add invoice DAte
+    if(invoice.invoice_date){
+      htmlTable=htmlTable+'<td>'+invoice.invoice_date+'</td>';
+    }else{
+      htmlTable=htmlTable+'<td>N/A</td>';
+    }
+    //add total amount
+    if(invoice.total_amount&&invoice.total_amount.value){
+      htmlTable=htmlTable+'<td>'+invoice.total_amount.value+'</td>';
+    }else{
+      htmlTable=htmlTable+'<td>N/A</td>';
+    }
+    // add status
+    if(invoice.status){
+      htmlTable=htmlTable+'<td>'+invoice.status+'</td>';
+    }else{
+      htmlTable=htmlTable+'<td>N/A</td>';
+    }
+    
+    htmlTable=htmlTable+'</tr>';
+  });
+  htmlTable=htmlTable+'</table>'
+  
+  return htmlTable;
+}
+
+function getPaidInvoice(authorizationToken){
+  head = {
+    'Authorization':"Bearer "+ authorizationToken,
+    'Content-Type': 'application/json'
+  }
+   params = {
+    headers:  head,
+    method : "post",
+    muteHttpExceptions: true, 
+     payload : JSON.stringify({
+       status: ["PAID"],
+       page:0,
+       page_size:50
+     })
+   }
+  tokenEndpoint='https://api.paypal.com/v1/invoicing/search';
+  request = UrlFetchApp.getRequest(tokenEndpoint, params); 
+  response = UrlFetchApp.fetch(tokenEndpoint, params); 
+  
+  var responseCode = response.getResponseCode();
+  var responseBody = response.getContentText();
+   var paidInvoiceResponse={};
+  if (responseCode === 200) {
+    var responseJson = JSON.parse(responseBody);
+    paidInvoiceResponse.error=false;
+    paidInvoiceResponse.invoices=responseJson.invoices;
+    return paidInvoiceResponse;
+
+    } else {
+      paidInvoiceResponse.error=true;
+      paidInvoiceResponse.message=Utilities.formatString("Request failed. Expected 200, got %d: %s", responseCode, responseBody);
+      return paidInvoiceResponse;
+    }   
+
+}
+function getUnpaidInvoice(authorizationToken){
+  head = {
+    'Authorization':"Bearer "+ authorizationToken,
+    'Content-Type': 'application/json'
+  }
+   params = {
+    headers:  head,
+    method : "post",
+    muteHttpExceptions: true, 
+     payload : JSON.stringify({
+       status: ["UNPAID","SENT"],
+       page:0,
+       page_size:50
+     })
+   }
+  tokenEndpoint='https://api.paypal.com/v1/invoicing/search';
+  request = UrlFetchApp.getRequest(tokenEndpoint, params); 
+  response = UrlFetchApp.fetch(tokenEndpoint, params); 
+  
+  var responseCode = response.getResponseCode();
+  var responseBody = response.getContentText();
+   var unpaidInvoiceResponse={};
+  if (responseCode === 200) {
+    var responseJson = JSON.parse(responseBody);
+    unpaidInvoiceResponse.error=false;
+    unpaidInvoiceResponse.invoices=responseJson.invoices;
+    return unpaidInvoiceResponse;
+
+    } else {
+      unpaidInvoiceResponse.error=true;
+      unpaidInvoiceResponse.message=Utilities.formatString("Request failed. Expected 200, got %d: %s", responseCode, responseBody);
+      return unpaidInvoiceResponse;
+    }   
+
+}
 function sendDraftInvoice(invoiceId,authorizationToken){
   head = {
     'Authorization':"Bearer "+ authorizationToken,
@@ -68,9 +255,9 @@ function sendDraftInvoice(invoiceId,authorizationToken){
    params = {
     headers:  head,
     method : "post",
-    muteHttpExceptions: true, 
+    muteHttpExceptions: true
   }
-  tokenEndpoint='https://api.sandbox.paypal.com/v1/invoicing/invoices/'+invoiceId+'/send';
+  tokenEndpoint='https://api.paypal.com/v1/invoicing/invoices/'+invoiceId+'/send';
   request = UrlFetchApp.getRequest(tokenEndpoint, params); 
   response = UrlFetchApp.fetch(tokenEndpoint, params); 
   
@@ -103,7 +290,7 @@ function createInvoiceDraft(invoiceData, authorizationToken){
     muteHttpExceptions: true,
     payload:JSON.stringify(invoiceData)    
   }
-  tokenEndpoint='https://api.sandbox.paypal.com/v1/invoicing/invoices';
+  tokenEndpoint='https://api.paypal.com/v1/invoicing/invoices';
   request = UrlFetchApp.getRequest(tokenEndpoint, params); 
   response = UrlFetchApp.fetch(tokenEndpoint, params); 
   
@@ -124,7 +311,7 @@ function createInvoiceDraft(invoiceData, authorizationToken){
 }
 
 function getAuthorizationToken(client_id,secret_id){
-  var tokenEndpoint = "https://api.sandbox.paypal.com/v1/oauth2/token";
+  var tokenEndpoint = "https://api.paypal.com/v1/oauth2/token";
     var head = {
       'Authorization':"Basic "+ Utilities.base64Encode(client_id+':'+secret_id),
       'Accept': 'application/json',
